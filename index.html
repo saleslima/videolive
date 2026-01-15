@@ -86,16 +86,14 @@ const btnStop = document.getElementById("btnStop");
 const statusEl = document.getElementById("status");
 
 let peerId = null;
+let localStream = null;
 let recorder = null;
 let recordedChunks = [];
 
-const peer = new Peer(undefined, {
-    host: "peerjs.com",
-    secure: true,
-    port: 443
-});
+/* ✅ PeerJS Cloud (correção principal) */
+const peer = new Peer();
 
-/* Quando o PeerJS estiver pronto */
+/* Quando conectar */
 peer.on("open", id => {
     peerId = id;
     btnLink.disabled = false;
@@ -105,39 +103,73 @@ peer.on("open", id => {
     const room = params.get("r");
 
     if (room) {
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(stream => {
-            peer.call(room, stream);
-        })
-        .catch(() => alert("Permissão de câmera/microfone negada"));
+        startCamera().then(() => {
+            peer.call(room, localStream);
+        });
     }
 });
 
 /* Receber chamadas */
 peer.on("call", call => {
-    call.answer();
-    call.on("stream", stream => addVideo(stream));
+    startCamera().then(() => {
+        call.answer(localStream);
+        call.on("stream", remoteStream => addVideo(remoteStream));
+    });
 });
 
-/* Adiciona vídeo e grava */
+/* Iniciar câmera */
+function startCamera() {
+    if (localStream) return Promise.resolve();
+
+    return navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+            localStream = stream;
+            addVideo(stream);
+        })
+        .catch(() => alert("Permissão de câmera/microfone negada"));
+}
+
+/* Adicionar vídeo */
 function addVideo(stream) {
     const video = document.createElement("video");
     video.srcObject = stream;
     video.autoplay = true;
     video.playsInline = true;
     videos.appendChild(video);
+}
 
-    recorder = new MediaRecorder(stream);
+/* Gerar link */
+btnLink.onclick = () => {
+    const url = `${location.origin}${location.pathname}?r=${peerId}`;
+    linkDiv.innerText = url;
+    navigator.clipboard.writeText(url);
+};
+
+/* Gravar */
+btnRecord.onclick = () => {
+    if (!localStream) return alert("Nenhum vídeo para gravar");
+
+    recordedChunks = [];
+    recorder = new MediaRecorder(localStream);
     recorder.ondataavailable = e => recordedChunks.push(e.data);
+    recorder.start();
+    statusEl.innerText = "🔴 Gravando...";
+};
+
+/* Parar gravação */
+btnStop.onclick = () => {
+    if (!recorder) return;
+    recorder.stop();
     recorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: "video/webm" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = "gravacao.webm";
         a.click();
-        recordedChunks = [];
+        statusEl.innerText = "Gravação salva";
     };
-}
+};
+</script>
 
-/* Gerar link (AGORA FUNCIONA) */
-btnLink.o
+</body>
+</html>
